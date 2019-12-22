@@ -115,7 +115,7 @@ private handleLevelReport(physicalgraph.zwave.Command cmd) {
         shadeValue = "partially open"
         descriptionText = "${device.displayName} shade is ${level}% open"
     }
-    def levelEvent = createEvent(name: "shadeLevel", value: level, unit: "%", displayed: false)
+    def levelEvent = createEvent(name: "level", value: level, unit: "%", displayed: false)
     def stateEvent = createEvent(name: "windowShade", value: shadeValue, descriptionText: descriptionText, isStateChange: levelEvent.isStateChange)
     
     def result = [stateEvent, levelEvent]
