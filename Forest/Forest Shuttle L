@@ -13,65 +13,66 @@
  *  for the specific language governing permissions and limitations under the License.
  */
  
-import groovy.json.JsonOutput
- 
 metadata {
-	definition (name: "Forest Shuttle L Z-Wave", namespace: "sy", author: "Sy", ocfDeviceType: "oic.d.blind") {
-    	capability "Window Shade"        
+	definition (name: "Forest Shuttle L Z-Wave", namespace: "sy", author: "Sy") {
+    	capability "Window Shade" 
+        capability "Switch Level" 
 		capability "Refresh"
         capability "Health Check"
         capability "Actuator"
         capability "Sensor"
-		capability "Switch Level"
 
 		command "stop"
 
 		fingerprint mfr: "0207", prod: "0027", model: "0100", deviceJoinName: "Forest Shuttle L Z-Wave"
 	}
 
-	 tiles {
-        multiAttributeTile(name:"windowShade", type: "lighting", width: 6, height: 4){
+	 tiles (scale: 2) {
+     	multiAttributeTile(name:"windowShade", type: "generic", width: 3, height: 4){
             tileAttribute ("device.windowShade", key: "PRIMARY_CONTROL") {
-                attributeState "open", label:'${name}', action:"close", icon:"st.shades.shade-open", backgroundColor:"#79b821", nextState:"closing"
-                attributeState "closed", label:'${name}', action:"open", icon:"st.shades.shade-closed", backgroundColor:"#ffffff", nextState:"opening"
-                attributeState "partially open", label:'${name}', action:"close", icon:"st.shades.shade-open", backgroundColor:"#79b821", nextState:"closing"
-                attributeState "opening", label:'${name}', action:"stop", icon:"st.shades.shade-opening", backgroundColor:"#79b821", nextState:"open"
-                attributeState "closing", label:'${name}', action:"stop", icon:"st.shades.shade-closing", backgroundColor:"#ffffff", nextState:"closed"
-            }           
+                attributeState "closed", label: 'Closed', action: "open", icon:"st.shades.shade-closed", backgroundColor: "#ffffff", nextState:"opening"
+                attributeState "open", label: 'Open', action: "close", icon:"st.shades.shade-open", backgroundColor: "#00a0dc", nextState:"closing"
+                attributeState "opening", label: 'Opening', action: "stop", icon:"st.shades.shade-opening", backgroundColor: "#99d9f1", nextState:"partially open"
+                attributeState "closing", label: 'Closing', action: "stop", icon:"st.shades.shade-closing", backgroundColor: "#99d9f1", nextState:"partially open"
+                attributeState "partially open", label: 'Partially Open', action: "open", icon:"st.shades.shade-open", backgroundColor: "#00a0dc", nextState:"opening"
+            }
             tileAttribute ("device.level", key: "SLIDER_CONTROL") {
                 attributeState "level", action:"setLevel"
             }
         }
-        
-        standardTile("refresh", "device.refresh", width: 2, height: 2, inactiveLabel: false, decoration: "flat") {
-            state "default", label:'', action:"refresh.refresh", icon:"st.secondary.refresh", nextState: "disabled"
-            state "disabled", label:'', action:"", icon:"st.secondary.refresh"
-        }
-
-        main(["windowShade"])
-        details(["windowShade", "refresh"])
     }
 }
 
-// parse events into attributes
-def parse(String description) {
-    def result = null
-    def cmd = zwave.parse(description, [0x20: 1, 0x26: 3]) 
-    if (cmd) {
-        result = zwaveEvent(cmd)
-    }
-    return result
+def open() {
+    zwave.basicV1.basicSet(value: 99).format()
+}
+
+def close() {
+    zwave.basicV1.basicSet(value: 0).format()
+}
+
+def stop() {
+    zwave.switchMultilevelV3.switchMultilevelStopLevelChange().format()
+}
+
+def setLevel(value, duration = null) {
+    Integer level = value as Integer
+    if (level < 0) level = 0
+    if (level > 99) level = 99
+    delayBetween([
+            zwave.basicV1.basicSet(value: level).format(),
+            zwave.switchMultilevelV1.switchMultilevelGet().format()
+    ])
+}
+
+def refresh() {
+    delayBetween([
+            zwave.switchMultilevelV1.switchMultilevelGet().format(),
+            zwave.batteryV1.batteryGet().format()
+    ], 1500)
 }
 
 def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicReport cmd) {
-    handleLevelReport(cmd)
-}
-
-def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd) {
-    handleLevelReport(cmd)
-}
-
-def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd) {
     handleLevelReport(cmd)
 }
 
@@ -80,24 +81,12 @@ def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelS
       response(zwave.switchMultilevelV1.switchMultilevelGet().format()) ]
 }
 
-def zwaveEvent(physicalgraph.zwave.commands.manufacturerspecificv2.ManufacturerSpecificReport cmd) {
-    def msr = String.format("%04X-%04X-%04X", cmd.manufacturerId, cmd.productTypeId, cmd.productId)
-    updateDataValue("MSR", msr)
-    if (cmd.manufacturerName) {
-        updateDataValue("manufacturer", cmd.manufacturerName)
-    }
-    createEvent([descriptionText: "$device.displayName MSR: $msr", isStateChange: false])
+def zwaveEvent(physicalgraph.zwave.commands.switchmultilevelv3.SwitchMultilevelReport cmd) {
+    handleLevelReport(cmd)
 }
 
-def zwaveEvent(physicalgraph.zwave.Command cmd) {
-    log.debug "unhandled $cmd"
-    return []
-}
-
-def getCheckInterval() {
-    // These are battery-powered devices, and it's not very critical
-    // to know whether they're online or not – 12 hrs
-    4 * 60 * 60
+def zwaveEvent(physicalgraph.zwave.commands.basicv1.BasicSet cmd) {
+    handleLevelReport(cmd)
 }
 
 private handleLevelReport(physicalgraph.zwave.Command cmd) {
@@ -122,40 +111,11 @@ private handleLevelReport(physicalgraph.zwave.Command cmd) {
     result
 }
 
-// handle commands
-def open() {
-    zwave.basicV1.basicSet(value: 99).format()
-}
-
-def close() {
-    zwave.basicV1.basicSet(value: 0).format()
-}
-
-def setLevel(value, duration = null) {
-    Integer level = value as Integer
-    if (level < 0) level = 0
-    if (level > 99) level = 99
-    delayBetween([
-            zwave.basicV1.basicSet(value: level).format(),
-            zwave.switchMultilevelV1.switchMultilevelGet().format()
-    ])
-}
-
-def pause() {
-    stop()
-}
-
-def stop() {
-    zwave.switchMultilevelV3.switchMultilevelStopLevelChange().format()
-}
-
-def ping() {
-    zwave.switchMultilevelV1.switchMultilevelGet().format()
-}
-
-def refresh() {
-    delayBetween([
-            zwave.switchMultilevelV1.switchMultilevelGet().format(),
-            zwave.batteryV1.batteryGet().format()
-    ], 1500)
+def parse(String description) {
+    def result = null
+    def cmd = zwave.parse(description, [0x20: 1, 0x26: 3]) 
+    if (cmd) {
+        result = zwaveEvent(cmd)
+    }
+    return result
 }
